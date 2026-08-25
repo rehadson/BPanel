@@ -1,0 +1,18 @@
+Brillouin Publication Panel Builder v1.5
+
+Changes in v1.5:
+- Added optional export of individual rendered images from the current panel.
+- Added export options dialog with support for:
+  - full panel only
+  - individual images only
+  - full panel + individual images
+- Individual images are rendered with the same visual settings as the panel:
+  - colormap
+  - min/max range or percentile scaling
+  - scale factor and offset
+  - interpolation
+  - raster DPI
+- Added optional standalone colorbars for exported Brillouin individual images.
+- In comparison mode, exported individual images follow the selected comparison Z plane for stack datasets.
+- In Z-stack mode, exported individual images include all displayed planes using names like sample_Z1_shift.png.
+- Individual exports are written into a companion folder named <panel_stem>_individual.

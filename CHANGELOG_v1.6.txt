@@ -1,0 +1,7 @@
+Brillouin Publication Panel Builder v1.6
+
+Changes in v1.6:
+- Fixed standalone individual-image colorbars so numeric tick labels are no longer clipped off the right edge.
+- Standalone exports now reserve explicit right-side space for colorbar values.
+- If a standalone colorbar title is enabled, a small top margin is also reserved so the title is not clipped.
+- All v1.5 individual-export behavior is retained.

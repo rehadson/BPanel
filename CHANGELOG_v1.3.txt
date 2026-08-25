@@ -1,0 +1,7 @@
+Brillouin Publication Panel Builder v1.3
+
+Changes in v1.3:
+- Fixed the GUI preview so it preserves the real figure aspect ratio instead of stretching the preview to fill the window.
+- Added a scrollable preview area. Large panels now remain proportionally correct and can be scrolled, so the preview better matches the exported figure.
+- The preview canvas is now shown at a fixed size derived from the rendered figure, which makes horizontal and vertical gaps visually representative of export.
+- Retained all previous v1.2 features, including Z-stack support and BMrep-specific brightfield selection.

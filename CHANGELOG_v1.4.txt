@@ -1,0 +1,10 @@
+Brillouin Publication Panel Builder v1.4
+
+Changes in v1.4:
+- Reworked preview rendering to fix font-size and clipping differences between GUI preview and exported PNG/TIFF.
+- Preview now renders the complete figure at the selected export DPI using the same Matplotlib savefig path as raster export.
+- The completed bitmap is then uniformly down-scaled for display, so labels, ticks, colorbars, gaps, and images retain the same proportions as export.
+- Switched the Matplotlib backend used by the application preview/export renderer to non-interactive Agg for more deterministic raster output.
+- Preview remains scrollable.
+- Removed the interactive Matplotlib toolbar from the preview because the preview is now an export-faithful raster image.
+- Retains Z-stack support and BMrep-specific brightfield selection from previous versions.

@@ -1,0 +1,12 @@
+Brillouin Publication Panel Builder v1.2
+
+New in v1.2
+- Reads 2D Brillouin TIFFs and 3D Z-stacks (Z, Y, X).
+- Automatically reports 2D vs Z-stack and detected focal-plane counts.
+- Comparison mode can display a selected Z plane while preserving ordinary 2D measurements.
+- Z-stack mode uses focal planes as columns and channels as rows.
+- Shared quantitative color ranges across all displayed Z planes.
+- Brightfield can appear only in Z1 or repeat across all Z columns.
+- Batch PDF export creates one Z-stack panel per checked stack measurement.
+- BMrep-specific cropped brightfield selection from v1.1 is retained.
+- No automatic max/mean projection is performed.
