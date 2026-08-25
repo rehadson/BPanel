@@ -1,6 +1,6 @@
-# Brillouin Publication Panel Builder v1.2
+# Brillouin Publication Panel Builder v1.6
 
-A local Python desktop application for assembling publication panels from Brillouin microscopy exports.
+A local Python desktop application for assembling publication panels from BMicro Brillouin microscopy exports. This does not include original BMicro software and it does not analyse your Brillouin data. For BMicro go https://github.com/BrillouinMicroscopy/BMicro.
 
 ## What it does
 
@@ -167,3 +167,29 @@ If an entire channel is missing from all selected measurements, that row is omit
 The GUI preview is now generated through the same raster rendering path used for PNG/TIFF export. The complete figure is first rendered at the selected export DPI and is only then uniformly down-scaled for display in the GUI. This means font size, clipping, row/column spacing, colorbars, and image proportions in the preview match the exported raster figure.
 
 Because the preview is an export-faithful raster preview, the old interactive Matplotlib preview toolbar is no longer shown. Use the dedicated Export panel button for final output.
+
+## Changes in v1.5:
+- Added optional export of individual rendered images from the current panel.
+- Added export options dialog with support for:
+  - full panel only
+  - individual images only
+  - full panel + individual images
+- Individual images are rendered with the same visual settings as the panel:
+  - colormap
+  - min/max range or percentile scaling
+  - scale factor and offset
+  - interpolation
+  - raster DPI
+- Added optional standalone colorbars for exported Brillouin individual images.
+- In comparison mode, exported individual images follow the selected comparison Z plane for stack datasets.
+- In Z-stack mode, exported individual images include all displayed planes using names like sample_Z1_shift.png.
+- Individual exports are written into a companion folder named <panel_stem>_individual.
+
+Brillouin Publication Panel Builder v1.6
+
+## Changes in v1.6:
+- Fixed standalone individual-image colorbars so numeric tick labels are no longer clipped off the right edge.
+- Standalone exports now reserve explicit right-side space for colorbar values.
+- If a standalone colorbar title is enabled, a small top margin is also reserved so the title is not clipped.
+- All v1.5 individual-export behavior is retained.
+
