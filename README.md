@@ -183,3 +183,22 @@ In **6. Scale bar**, configure:
 - whether the numerical length label is shown and its font size.
 
 The Brillouin and brightfield calibrations are deliberately separate because their image grids can have different physical sampling. Enter the actual acquisition/export calibration; the program does not infer or guess pixel size from image dimensions. The scale bar is an overlay only and never modifies the source image data.
+
+## v1.7.1
+
+Fixes
+- Brightfield scale bar is now calibrated automatically from the paired Brillouin measurement's pixel size and field of view, instead of a separate manually-entered value.
+- Manual "Brightfield pixel size" field is kept only as a fallback for measurements with no Brillouin channel image, and is labeled as such in the UI.
+
+New functionality
+- Added a per-channel colorbar tick-label style: numeric values, or Min/Max labels only.
+- Intensity channel now defaults to Min/Max labels, since intensity values are in arbitrary units. Shift and width default to numeric values.
+- Applies to both panel colorbars and standalone colorbars in individual-image export.
+- All control sections (Data folder, Measurements/columns, Panel mode/Z-stacks, Channels/rows, Layout, Scale bar) can now be collapsed/expanded by clicking their header, making it faster to reach controls near the bottom of the panel.
+- Added "Use all" / "Use none" buttons to the Measurements/columns section, to quickly select or deselect all scanned measurements instead of unchecking them one by one.
+
+
+Compatibility
+- Existing settings files from v1.7.0 remain compatible; missing colorbar tick-style settings default to numeric.
+
+
