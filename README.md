@@ -1,4 +1,4 @@
-# Brillouin Publication Panel Builder
+# Brillouin Publication Panel Builder v1.7.0
 
 A local Python desktop application for assembling publication panels from Brillouin microscopy exports.
 
@@ -183,18 +183,3 @@ In **6. Scale bar**, configure:
 - whether the numerical length label is shown and its font size.
 
 The Brillouin and brightfield calibrations are deliberately separate because their image grids can have different physical sampling. Enter the actual acquisition/export calibration; the program does not infer or guess pixel size from image dimensions. The scale bar is an overlay only and never modifies the source image data.
-
-## Fixes and added option to show only "Max" and "Min" labels (v1.7.1)
-
-Fixes
-- Brightfield scale bar is now calibrated automatically from the paired Brillouin measurement's pixel size and field of view, instead of a separate manually-entered value.
-- Manual "Brightfield pixel size" field is kept only as a fallback for measurements with no Brillouin channel image, and is labeled as such in the UI.
-
-New functionality
-- Added a per-channel colorbar tick-label style: numeric values, or Min/Max labels only.
-- Intensity channel now defaults to Min/Max labels, since intensity values are in arbitrary units. Shift and width default to numeric values.
-- Applies to both panel colorbars and standalone colorbars in individual-image export.
-
-Compatibility
-- Existing settings files from v1.7.0 remain compatible; missing colorbar tick-style settings default to numeric.
-

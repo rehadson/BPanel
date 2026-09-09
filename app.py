@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
@@ -31,11 +32,13 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QSpinBox,
     QSplitter,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -60,8 +63,44 @@ from panel_engine import (
 )
 
 
-APP_VERSION = "1.7.1"
+APP_VERSION = "1.7.2"
 APP_TITLE = f"Brillouin Publication Panel Builder v{APP_VERSION}"
+
+
+class CollapsibleSection(QWidget):
+    """A titled section whose content can be collapsed/expanded by clicking its
+    header. Behaves like a QGroupBox for layout purposes: build the section's
+    controls on ``.content_widget`` exactly as you would on a QGroupBox, then
+    add the CollapsibleSection instance itself to the parent layout."""
+
+    def __init__(self, title: str, start_expanded: bool = True, parent=None):
+        super().__init__(parent)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(2)
+
+        self.toggle_button = QToolButton()
+        self.toggle_button.setText(title)
+        self.toggle_button.setCheckable(True)
+        self.toggle_button.setChecked(start_expanded)
+        self.toggle_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.toggle_button.setArrowType(Qt.DownArrow if start_expanded else Qt.RightArrow)
+        self.toggle_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.toggle_button.setStyleSheet(
+            "QToolButton { border: none; font-weight: bold; padding: 4px; text-align: left; }"
+        )
+        self.toggle_button.clicked.connect(self._on_toggled)
+
+        self.content_widget = QFrame()
+        self.content_widget.setFrameShape(QFrame.StyledPanel)
+        self.content_widget.setVisible(start_expanded)
+
+        outer.addWidget(self.toggle_button)
+        outer.addWidget(self.content_widget)
+
+    def _on_toggled(self, checked: bool) -> None:
+        self.content_widget.setVisible(checked)
+        self.toggle_button.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
 
 
 class ChannelEditor(QWidget):
@@ -309,7 +348,8 @@ class MainWindow(QMainWindow):
         controls_scroll.setMaximumWidth(620)
         splitter.addWidget(controls_scroll)
 
-        folder_group = QGroupBox("1. Data folder")
+        folder_section = CollapsibleSection("1. Data folder")
+        folder_group = folder_section.content_widget
         folder_layout = QVBoxLayout(folder_group)
         folder_row = QHBoxLayout()
         self.folder_edit = QLineEdit()
@@ -324,9 +364,10 @@ class MainWindow(QMainWindow):
         self.scan_info = QLabel("No folder scanned.")
         self.scan_info.setWordWrap(True)
         folder_layout.addWidget(self.scan_info)
-        controls.addWidget(folder_group)
+        controls.addWidget(folder_section)
 
-        measurement_group = QGroupBox("2. Measurements / columns")
+        measurement_section = CollapsibleSection("2. Measurements / columns")
+        measurement_group = measurement_section.content_widget
         measurement_layout = QVBoxLayout(measurement_group)
         self.measurement_table = QTableWidget(0, 7)
         self.measurement_table.setHorizontalHeaderLabels(
@@ -342,6 +383,15 @@ class MainWindow(QMainWindow):
         self.measurement_table.setSelectionMode(QTableWidget.SingleSelection)
         measurement_layout.addWidget(self.measurement_table)
 
+        use_row = QHBoxLayout()
+        use_all_button = QPushButton("Use all")
+        use_none_button = QPushButton("Use none")
+        use_all_button.clicked.connect(lambda: self._set_all_measurements_used(True))
+        use_none_button.clicked.connect(lambda: self._set_all_measurements_used(False))
+        use_row.addWidget(use_all_button)
+        use_row.addWidget(use_none_button)
+        measurement_layout.addLayout(use_row)
+
         order_row = QHBoxLayout()
         up_button = QPushButton("Move up")
         down_button = QPushButton("Move down")
@@ -350,9 +400,10 @@ class MainWindow(QMainWindow):
         order_row.addWidget(up_button)
         order_row.addWidget(down_button)
         measurement_layout.addLayout(order_row)
-        controls.addWidget(measurement_group)
+        controls.addWidget(measurement_section)
 
-        stack_group = QGroupBox("3. Panel mode / Z-stacks")
+        stack_section = CollapsibleSection("3. Panel mode / Z-stacks")
+        stack_group = stack_section.content_widget
         stack_form = QFormLayout(stack_group)
         self.panel_mode = QComboBox()
         self.panel_mode.addItem("Comparison - measurements as columns", "comparison")
@@ -385,9 +436,10 @@ class MainWindow(QMainWindow):
         stack_form.addRow("Brightfield in Z-stack", self.brightfield_z_mode)
         stack_form.addRow(self.show_plane_titles)
         stack_form.addRow(self.stack_info)
-        controls.addWidget(stack_group)
+        controls.addWidget(stack_section)
 
-        channel_group = QGroupBox("4. Channels / rows")
+        channel_section = CollapsibleSection("4. Channels / rows")
+        channel_group = channel_section.content_widget
         channel_layout = QVBoxLayout(channel_group)
         order_hint = QLabel("Drag the row names below to change row order.")
         channel_layout.addWidget(order_hint)
@@ -407,9 +459,10 @@ class MainWindow(QMainWindow):
             self.channel_editors[channel] = editor
             self.channel_tabs.addTab(editor, channel.capitalize())
         channel_layout.addWidget(self.channel_tabs)
-        controls.addWidget(channel_group)
+        controls.addWidget(channel_section)
 
-        layout_group = QGroupBox("5. Layout")
+        layout_section = CollapsibleSection("5. Layout")
+        layout_group = layout_section.content_widget
         layout_form = QFormLayout(layout_group)
         self.row_height = self._double_spin(10, 100, 36, 1, 1)
         self.hgap = self._double_spin(0, 20, 2, 0.5, 1)
@@ -438,9 +491,10 @@ class MainWindow(QMainWindow):
         layout_form.addRow("Raster export DPI", self.dpi)
         layout_form.addRow(self.show_titles)
         layout_form.addRow(self.show_missing)
-        controls.addWidget(layout_group)
+        controls.addWidget(layout_section)
 
-        scale_group = QGroupBox("6. Scale bar")
+        scale_section = CollapsibleSection("6. Scale bar")
+        scale_group = scale_section.content_widget
         scale_form = QFormLayout(scale_group)
         self.scale_enabled = QCheckBox("Add calibrated scale bar")
         self.scale_length = self._double_spin(0.01, 100000, 10.0, 1.0, 2)
@@ -489,7 +543,7 @@ class MainWindow(QMainWindow):
         scale_form.addRow(self.scale_show_label)
         scale_form.addRow("Label font [pt]", self.scale_font_size)
         scale_form.addRow(scale_note)
-        controls.addWidget(scale_group)
+        controls.addWidget(scale_section)
 
         button_row = QHBoxLayout()
         preview_button = QPushButton("Update preview")
@@ -741,6 +795,13 @@ class MainWindow(QMainWindow):
                 self.measurement_table.setItem(row_a, col, item)
         finally:
             self.measurement_table.setUpdatesEnabled(True)
+
+    def _set_all_measurements_used(self, use: bool) -> None:
+        state = Qt.Checked if use else Qt.Unchecked
+        for row in range(self.measurement_table.rowCount()):
+            item = self.measurement_table.item(row, 0)
+            if item is not None:
+                item.setCheckState(state)
 
     def _set_preview_pixmap(self, pixmap: QPixmap, export_dpi: int) -> None:
         """Display an export-rendered bitmap after uniform down-scaling.
