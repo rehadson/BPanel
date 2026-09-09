@@ -50,6 +50,7 @@ from panel_engine import (
     Measurement,
     PanelConfig,
     StackSettings,
+    ScaleBarSettings,
     load_config,
     make_default_config,
     render_panel,
@@ -59,7 +60,7 @@ from panel_engine import (
 )
 
 
-APP_VERSION = "1.6"
+APP_VERSION = "1.7.1"
 APP_TITLE = f"Brillouin Publication Panel Builder v{APP_VERSION}"
 
 
@@ -90,6 +91,7 @@ class ChannelEditor(QWidget):
         self.offset = None
         self.colorbar_label = None
         self.colorbar_ticks = None
+        self.colorbar_tick_style = None
 
         if self.is_data:
             self.cmap = QComboBox()
@@ -126,6 +128,9 @@ class ChannelEditor(QWidget):
             self.colorbar_label = QLineEdit()
             self.colorbar_ticks = QSpinBox()
             self.colorbar_ticks.setRange(2, 20)
+            self.colorbar_tick_style = QComboBox()
+            self.colorbar_tick_style.addItem("Numeric values", "numeric")
+            self.colorbar_tick_style.addItem("Min / Max labels only", "minmax")
 
             form.addRow("Colormap", self.cmap)
             form.addRow("Custom colors", self.custom_colors)
@@ -137,9 +142,11 @@ class ChannelEditor(QWidget):
             form.addRow("Scale factor", self.scale_factor)
             form.addRow("Offset", self.offset)
             form.addRow("Colorbar title", self.colorbar_label)
+            form.addRow("Colorbar tick labels", self.colorbar_tick_style)
             form.addRow("Colorbar ticks", self.colorbar_ticks)
 
             self.range_mode.currentIndexChanged.connect(self._update_range_controls)
+            self.colorbar_tick_style.currentIndexChanged.connect(self._update_range_controls)
 
         self.set_settings(settings)
 
@@ -158,6 +165,8 @@ class ChannelEditor(QWidget):
         self.vmax.setEnabled(mode == "manual")
         self.percentile_low.setEnabled(mode == "percentile")
         self.percentile_high.setEnabled(mode == "percentile")
+        if self.colorbar_ticks is not None and self.colorbar_tick_style is not None:
+            self.colorbar_ticks.setEnabled(self.colorbar_tick_style.currentData() != "minmax")
 
     def set_settings(self, settings: ChannelSettings) -> None:
         self.enabled.setChecked(settings.enabled)
@@ -176,6 +185,8 @@ class ChannelEditor(QWidget):
             self.offset.setValue(settings.offset)
             self.colorbar_label.setText(settings.colorbar_label)
             self.colorbar_ticks.setValue(settings.colorbar_ticks)
+            style_index = self.colorbar_tick_style.findData(settings.colorbar_tick_style)
+            self.colorbar_tick_style.setCurrentIndex(max(0, style_index))
             self._update_range_controls()
 
     def settings(self) -> ChannelSettings:
@@ -196,6 +207,7 @@ class ChannelEditor(QWidget):
             result.offset = self.offset.value()
             result.colorbar_label = self.colorbar_label.text().strip()
             result.colorbar_ticks = self.colorbar_ticks.value()
+            result.colorbar_tick_style = self.colorbar_tick_style.currentData() or "numeric"
         return result
 
 
@@ -427,6 +439,57 @@ class MainWindow(QMainWindow):
         layout_form.addRow(self.show_titles)
         layout_form.addRow(self.show_missing)
         controls.addWidget(layout_group)
+
+        scale_group = QGroupBox("6. Scale bar")
+        scale_form = QFormLayout(scale_group)
+        self.scale_enabled = QCheckBox("Add calibrated scale bar")
+        self.scale_length = self._double_spin(0.01, 100000, 10.0, 1.0, 2)
+        self.scale_brillouin_px = self._double_spin(0.000001, 10000, 0.5, 0.1, 6)
+        self.scale_brightfield_px = self._double_spin(0.000001, 10000, 0.5, 0.1, 6)
+
+        self.scale_apply_to = QComboBox()
+        self.scale_apply_to.addItem("All images", "all")
+        self.scale_apply_to.addItem("Brightfield only", "brightfield")
+        self.scale_apply_to.addItem("Brillouin maps only", "brillouin")
+
+        self.scale_position = QComboBox()
+        self.scale_position.addItem("Lower right", "lower right")
+        self.scale_position.addItem("Lower left", "lower left")
+        self.scale_position.addItem("Upper right", "upper right")
+        self.scale_position.addItem("Upper left", "upper left")
+
+        self.scale_color = QComboBox()
+        self.scale_color.setEditable(True)
+        self.scale_color.addItems(["white", "black"])
+        self.scale_line_width = self._double_spin(0.1, 20, 3.0, 0.5, 1)
+        self.scale_margin = self._double_spin(0, 25, 5.0, 1.0, 1)
+        self.scale_show_label = QCheckBox("Show length label")
+        self.scale_show_label.setChecked(True)
+        self.scale_font_size = self._double_spin(1, 40, 8.0, 0.5, 1)
+
+        scale_note = QLabel(
+            "Brillouin pixel size must be the physical X/Y calibration in µm/pixel. "
+            "Brightfield images carry no calibration of their own, so the brightfield scale bar "
+            "is automatically derived from the Brillouin pixel size and field of view of the "
+            "matching measurement (they share the same field of view at a different pixel "
+            "resolution). The brightfield pixel size below is only used as a manual fallback "
+            "for measurements that have no Brillouin channel image at all."
+        )
+        scale_note.setWordWrap(True)
+
+        scale_form.addRow(self.scale_enabled)
+        scale_form.addRow("Apply to", self.scale_apply_to)
+        scale_form.addRow("Bar length [µm]", self.scale_length)
+        scale_form.addRow("Brillouin pixel size [µm/px]", self.scale_brillouin_px)
+        scale_form.addRow("Brightfield pixel size (fallback) [µm/px]", self.scale_brightfield_px)
+        scale_form.addRow("Position", self.scale_position)
+        scale_form.addRow("Color", self.scale_color)
+        scale_form.addRow("Line width [pt]", self.scale_line_width)
+        scale_form.addRow("Margin [%]", self.scale_margin)
+        scale_form.addRow(self.scale_show_label)
+        scale_form.addRow("Label font [pt]", self.scale_font_size)
+        scale_form.addRow(scale_note)
+        controls.addWidget(scale_group)
 
         button_row = QHBoxLayout()
         preview_button = QPushButton("Update preview")
@@ -759,6 +822,20 @@ class MainWindow(QMainWindow):
             missing_text="N/A",
             background="white",
         )
+        config.scale_bar = ScaleBarSettings(
+            enabled=self.scale_enabled.isChecked(),
+            length_um=self.scale_length.value(),
+            brillouin_pixel_size_um=self.scale_brillouin_px.value(),
+            brightfield_pixel_size_um=self.scale_brightfield_px.value(),
+            position=self.scale_position.currentData() or "lower right",
+            color=self.scale_color.currentText().strip() or "white",
+            line_width_pt=self.scale_line_width.value(),
+            margin_percent=self.scale_margin.value(),
+            show_label=self.scale_show_label.isChecked(),
+            font_size_pt=self.scale_font_size.value(),
+            apply_to=self.scale_apply_to.currentData() or "all",
+        )
+
         self.config = config
         return config
 
@@ -794,6 +871,19 @@ class MainWindow(QMainWindow):
         self.dpi.setValue(layout.dpi)
         self.show_titles.setChecked(layout.show_column_titles)
         self.show_missing.setChecked(layout.show_missing_text)
+
+        scale = config.scale_bar
+        self.scale_enabled.setChecked(scale.enabled)
+        self.scale_length.setValue(scale.length_um)
+        self.scale_brillouin_px.setValue(scale.brillouin_pixel_size_um)
+        self.scale_brightfield_px.setValue(scale.brightfield_pixel_size_um)
+        self._set_combo_data(self.scale_apply_to, scale.apply_to)
+        self._set_combo_data(self.scale_position, scale.position)
+        self.scale_color.setCurrentText(scale.color)
+        self.scale_line_width.setValue(scale.line_width_pt)
+        self.scale_margin.setValue(scale.margin_percent)
+        self.scale_show_label.setChecked(scale.show_label)
+        self.scale_font_size.setValue(scale.font_size_pt)
 
         panel_mode_blocker = QSignalBlocker(self.panel_mode)
         self._set_combo_data(self.panel_mode, config.stack.panel_mode)

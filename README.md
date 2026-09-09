@@ -1,6 +1,6 @@
-# Brillouin Publication Panel Builder v1.6
+# Brillouin Publication Panel Builder v1.7.0
 
-A local Python desktop application for assembling publication panels from BMicro Brillouin microscopy exports. This does not include original BMicro software and it does not analyse your Brillouin data. For BMicro go https://github.com/BrillouinMicroscopy/BMicro.
+A local Python desktop application for assembling publication panels from Brillouin microscopy exports.
 
 ## What it does
 
@@ -168,28 +168,18 @@ The GUI preview is now generated through the same raster rendering path used for
 
 Because the preview is an export-faithful raster preview, the old interactive Matplotlib preview toolbar is no longer shown. Use the dedicated Export panel button for final output.
 
-## Changes in v1.5:
-- Added optional export of individual rendered images from the current panel.
-- Added export options dialog with support for:
-  - full panel only
-  - individual images only
-  - full panel + individual images
-- Individual images are rendered with the same visual settings as the panel:
-  - colormap
-  - min/max range or percentile scaling
-  - scale factor and offset
-  - interpolation
-  - raster DPI
-- Added optional standalone colorbars for exported Brillouin individual images.
-- In comparison mode, exported individual images follow the selected comparison Z plane for stack datasets.
-- In Z-stack mode, exported individual images include all displayed planes using names like sample_Z1_shift.png.
-- Individual exports are written into a companion folder named <panel_stem>_individual.
+## Scale bars (v1.7.0)
 
-Brillouin Publication Panel Builder v1.6
+Version 1.7.0 can draw calibrated scale bars directly on panel tiles and on individually exported rendered images. Scale bars are disabled by default.
 
-## Changes in v1.6:
-- Fixed standalone individual-image colorbars so numeric tick labels are no longer clipped off the right edge.
-- Standalone exports now reserve explicit right-side space for colorbar values.
-- If a standalone colorbar title is enabled, a small top margin is also reserved so the title is not clipped.
-- All v1.5 individual-export behavior is retained.
+In **6. Scale bar**, configure:
 
+- whether the scale bar is enabled;
+- whether it is applied to all images, brightfield only, or Brillouin maps only;
+- scale-bar length in µm;
+- Brillouin pixel size in µm/pixel;
+- brightfield pixel size in µm/pixel;
+- corner position, color, line width, and edge margin;
+- whether the numerical length label is shown and its font size.
+
+The Brillouin and brightfield calibrations are deliberately separate because their image grids can have different physical sampling. Enter the actual acquisition/export calibration; the program does not infer or guess pixel size from image dimensions. The scale bar is an overlay only and never modifies the source image data.

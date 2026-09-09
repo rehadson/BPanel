@@ -106,6 +106,7 @@ class ChannelSettings:
     offset: float = 0.0
     colorbar_label: str = ""
     colorbar_ticks: int = 6
+    colorbar_tick_style: str = "numeric"  # numeric, minmax
     interpolation: str = "nearest"
 
 
@@ -142,6 +143,21 @@ class StackSettings:
 
 
 @dataclass
+class ScaleBarSettings:
+    enabled: bool = False
+    length_um: float = 10.0
+    brillouin_pixel_size_um: float = 0.5
+    brightfield_pixel_size_um: float = 0.5
+    position: str = "lower right"  # lower right, lower left, upper right, upper left
+    color: str = "white"
+    line_width_pt: float = 3.0
+    margin_percent: float = 5.0
+    show_label: bool = True
+    font_size_pt: float = 8.0
+    apply_to: str = "all"  # all, brightfield, brillouin
+
+
+@dataclass
 class PanelConfig:
     folder: str = ""
     measurement_order: List[str] = field(default_factory=list)
@@ -151,6 +167,7 @@ class PanelConfig:
     channels: Dict[str, ChannelSettings] = field(default_factory=dict)
     layout: LayoutSettings = field(default_factory=LayoutSettings)
     stack: StackSettings = field(default_factory=StackSettings)
+    scale_bar: ScaleBarSettings = field(default_factory=ScaleBarSettings)
 
     def to_dict(self) -> dict:
         return {
@@ -162,6 +179,7 @@ class PanelConfig:
             "channels": {k: asdict(v) for k, v in self.channels.items()},
             "layout": asdict(self.layout),
             "stack": asdict(self.stack),
+            "scale_bar": asdict(self.scale_bar),
         }
 
     @classmethod
@@ -172,6 +190,7 @@ class PanelConfig:
         }
         layout = LayoutSettings(**data.get("layout", {}))
         stack = StackSettings(**data.get("stack", {}))
+        scale_bar = ScaleBarSettings(**data.get("scale_bar", {}))
         return cls(
             folder=data.get("folder", ""),
             measurement_order=list(data.get("measurement_order", [])),
@@ -181,6 +200,7 @@ class PanelConfig:
             channels=channels,
             layout=layout,
             stack=stack,
+            scale_bar=scale_bar,
         )
 
 
@@ -233,6 +253,7 @@ def default_channel_settings() -> Dict[str, ChannelSettings]:
             offset=0.0,
             colorbar_label="I [a.u.]",
             colorbar_ticks=6,
+            colorbar_tick_style="minmax",
             interpolation="nearest",
         ),
     }
@@ -579,12 +600,16 @@ def _add_colorbar(
     vmin, vmax = resolved_ranges[channel]
     cmap = _get_colormap(settings, channel)
     scalar = ScalarMappable(norm=Normalize(vmin=vmin, vmax=vmax), cmap=cmap)
-    ticks = max(2, int(settings.colorbar_ticks))
-    colorbar = figure.colorbar(scalar, cax=cax, ticks=np.linspace(vmin, vmax, ticks))
+    if settings.colorbar_tick_style == "minmax":
+        colorbar = figure.colorbar(scalar, cax=cax, ticks=[vmin, vmax])
+        colorbar.ax.set_yticklabels(["Min", "Max"])
+    else:
+        ticks = max(2, int(settings.colorbar_ticks))
+        colorbar = figure.colorbar(scalar, cax=cax, ticks=np.linspace(vmin, vmax, ticks))
+        colorbar.ax.yaxis.set_major_formatter(matplotlib.ticker.StrMethodFormatter("{x:.4g}"))
     colorbar.ax.tick_params(
         labelsize=max(5.0, layout.font_size_pt * 0.75), length=2
     )
-    colorbar.ax.yaxis.set_major_formatter(matplotlib.ticker.StrMethodFormatter("{x:.4g}"))
     colorbar.outline.set_linewidth(0.5)
     if settings.colorbar_label:
         cax.set_title(
@@ -627,6 +652,135 @@ def _zstack_plane_image(
     if plane_index >= stack.shape[0]:
         return None
     return stack[plane_index]
+
+
+def _add_scale_bar(
+    ax,
+    image: np.ndarray,
+    channel: str,
+    settings: ScaleBarSettings,
+    reference_width_px: Optional[float] = None,
+) -> None:
+    """Draw a calibrated horizontal scale bar inside an image axes.
+
+    The bar length is calculated from the user-supplied pixel calibration and is
+    drawn in axes coordinates so preview and vector/raster exports have identical
+    placement. The image itself is never modified.
+
+    Brightfield images carry no calibration of their own. Brightfield snapshots
+    are acquired over the same physical field of view as their paired, calibrated
+    Brillouin map for that measurement, but usually at a different pixel
+    resolution. When ``reference_width_px`` (the width, in pixels, of that
+    measurement's calibrated Brillouin image) is available, the brightfield pixel
+    size is derived from it so the brightfield scale bar always matches the
+    Brillouin calibration. ``settings.brightfield_pixel_size_um`` is only used as
+    a manual fallback when no Brillouin channel image is available at all (e.g. a
+    brightfield-only measurement).
+    """
+    if not settings.enabled:
+        return
+    if settings.apply_to == "brightfield" and channel != "brightfield":
+        return
+    if settings.apply_to == "brillouin" and channel == "brightfield":
+        return
+
+    image_width_px = float(image.shape[1])
+
+    if channel == "brightfield":
+        if reference_width_px is not None and reference_width_px > 0 and image_width_px > 0:
+            field_width_um = float(reference_width_px) * float(settings.brillouin_pixel_size_um)
+            pixel_size_um = field_width_um / image_width_px
+        else:
+            pixel_size_um = settings.brightfield_pixel_size_um
+    else:
+        pixel_size_um = settings.brillouin_pixel_size_um
+    if pixel_size_um <= 0 or settings.length_um <= 0:
+        return
+
+    bar_width_fraction = (float(settings.length_um) / float(pixel_size_um)) / image_width_px
+    margin = max(0.0, min(0.25, float(settings.margin_percent) / 100.0))
+    available = 1.0 - 2.0 * margin
+    if bar_width_fraction > available:
+        field_width_um = image_width_px * float(pixel_size_um)
+        raise ValueError(
+            f"Scale bar ({settings.length_um:g} µm) is wider than the usable image width "
+            f"for {channel} (field width ≈ {field_width_um:g} µm). Reduce the bar length "
+            f"or verify the pixel size calibration."
+        )
+
+    position = (settings.position or "lower right").lower()
+    is_right = "right" in position
+    is_upper = "upper" in position
+    x2 = 1.0 - margin if is_right else margin + bar_width_fraction
+    x1 = x2 - bar_width_fraction if is_right else margin
+    y = 1.0 - margin if is_upper else margin
+
+    ax.plot(
+        [x1, x2], [y, y],
+        transform=ax.transAxes,
+        color=settings.color or "white",
+        linewidth=max(0.1, float(settings.line_width_pt)),
+        solid_capstyle="butt",
+        clip_on=True,
+        zorder=20,
+    )
+
+    if settings.show_label:
+        center_x = (x1 + x2) / 2.0
+        # Put the text inward from the bar, so it stays inside the image in all corners.
+        label_gap = 0.018
+        text_y = y - label_gap if is_upper else y + label_gap
+        va = "top" if is_upper else "bottom"
+        ax.text(
+            center_x,
+            text_y,
+            f"{settings.length_um:g} µm",
+            transform=ax.transAxes,
+            ha="center",
+            va=va,
+            color=settings.color or "white",
+            fontsize=max(1.0, float(settings.font_size_pt)),
+            clip_on=True,
+            zorder=21,
+        )
+
+
+def _reference_brillouin_width_from_provider(image_provider, col_index: int) -> Optional[float]:
+    """Return the pixel width of the first available calibrated Brillouin channel
+    (shift, then width, then intensity) for a given column, regardless of whether
+    that channel's row is currently shown in the panel. Used to derive an
+    accurate brightfield scale bar from the Brillouin calibration."""
+    for candidate in ("shift", "width", "intensity"):
+        img = image_provider(candidate, col_index)
+        if img is not None:
+            return float(img.shape[1])
+    return None
+
+
+def _reference_brillouin_width_for_measurement(
+    measurement: "Measurement",
+    channels_config: Dict[str, ChannelSettings],
+    plane_index: int,
+    zstack: bool,
+    brightfield_mode: str = "first",
+) -> Optional[float]:
+    """Same as _reference_brillouin_width_from_provider, but for callers (such as
+    individual-image export) that operate directly on a Measurement rather than
+    through an image_provider closure."""
+    for candidate in ("shift", "width", "intensity"):
+        if not measurement.has_channel(candidate):
+            continue
+        if zstack:
+            img = _zstack_plane_image(
+                measurement, candidate, channels_config[candidate], plane_index, brightfield_mode
+            )
+        else:
+            img = _comparison_plane_image(
+                measurement, candidate, channels_config[candidate], plane_index
+            )
+        if img is not None:
+            return float(img.shape[1])
+    return None
 
 
 def _render_grid(
@@ -753,6 +907,10 @@ def _render_grid(
                 )
             ax.set_xlim(-0.5, image.shape[1] - 0.5)
             ax.set_ylim(image.shape[0] - 0.5, -0.5)
+            reference_width_px = None
+            if channel == "brightfield":
+                reference_width_px = _reference_brillouin_width_from_provider(image_provider, col_index)
+            _add_scale_bar(ax, image, channel, config.scale_bar, reference_width_px=reference_width_px)
 
         if channel in DATA_CHANNELS:
             _add_colorbar(
@@ -984,8 +1142,10 @@ def _render_individual_tile(
     settings: ChannelSettings,
     resolved_ranges: Dict[str, Tuple[float, float]],
     layout: LayoutSettings,
+    scale_bar: ScaleBarSettings,
     output_path: str | Path,
     include_colorbar: bool = False,
+    reference_width_px: Optional[float] = None,
 ) -> None:
     mm_to_in = 1.0 / 25.4
     height_mm = float(layout.row_height_mm)
@@ -994,6 +1154,9 @@ def _render_individual_tile(
     colorbar_block = 0.0
     right_text_margin_mm = 0.0
     top_text_margin_mm = 0.0
+    # Reserve extra figure space for tick labels that can extend below the image/colorbar area.
+    # Increase this value if the lowest colorbar tick is still clipped in your exports.
+    bottom_text_margin_mm = 4.0
     if include_colorbar and channel in DATA_CHANNELS:
         colorbar_block = layout.colorbar_gap_mm + layout.colorbar_width_mm
         # Numeric tick labels are drawn to the right of the colorbar.
@@ -1003,7 +1166,7 @@ def _render_individual_tile(
         if settings.colorbar_label:
             top_text_margin_mm = 4.0
     fig_w_mm = image_width_mm + colorbar_block + right_text_margin_mm
-    fig_h_mm = height_mm + top_text_margin_mm
+    fig_h_mm = height_mm + top_text_margin_mm + bottom_text_margin_mm
 
     figure = plt.Figure(
         figsize=(fig_w_mm * mm_to_in, fig_h_mm * mm_to_in),
@@ -1011,7 +1174,7 @@ def _render_individual_tile(
         facecolor=layout.background,
     )
 
-    image_bottom = 0.0
+    image_bottom = bottom_text_margin_mm / fig_h_mm
     image_height_fraction = height_mm / fig_h_mm
     if colorbar_block > 0.0:
         ax = figure.add_axes([0.0, image_bottom, image_width_mm / fig_w_mm, image_height_fraction])
@@ -1035,6 +1198,7 @@ def _render_individual_tile(
         )
     ax.set_xlim(-0.5, image.shape[1] - 0.5)
     ax.set_ylim(image.shape[0] - 0.5, -0.5)
+    _add_scale_bar(ax, image, channel, scale_bar, reference_width_px=reference_width_px)
 
     if colorbar_block > 0.0 and channel in DATA_CHANNELS:
         cax = figure.add_axes(
@@ -1047,10 +1211,14 @@ def _render_individual_tile(
         )
         vmin, vmax = resolved_ranges[channel]
         scalar = ScalarMappable(norm=Normalize(vmin=vmin, vmax=vmax), cmap=_get_colormap(settings, channel))
-        ticks = max(2, int(settings.colorbar_ticks))
-        colorbar = figure.colorbar(scalar, cax=cax, ticks=np.linspace(vmin, vmax, ticks))
+        if settings.colorbar_tick_style == "minmax":
+            colorbar = figure.colorbar(scalar, cax=cax, ticks=[vmin, vmax])
+            colorbar.ax.set_yticklabels(["Min", "Max"])
+        else:
+            ticks = max(2, int(settings.colorbar_ticks))
+            colorbar = figure.colorbar(scalar, cax=cax, ticks=np.linspace(vmin, vmax, ticks))
+            colorbar.ax.yaxis.set_major_formatter(matplotlib.ticker.StrMethodFormatter("{x:.4g}"))
         colorbar.ax.tick_params(labelsize=max(5.0, layout.font_size_pt * 0.75), length=2)
-        colorbar.ax.yaxis.set_major_formatter(matplotlib.ticker.StrMethodFormatter("{x:.4g}"))
         colorbar.outline.set_linewidth(0.5)
         if settings.colorbar_label:
             cax.set_title(
@@ -1093,6 +1261,13 @@ def export_individual_images(
         base_name = _sanitize_filename_part(base_label or measurement.label or measurement.prefix)
         plane_count = int(context["plane_count"])
         for plane_index in range(plane_count):
+            reference_width_px = _reference_brillouin_width_for_measurement(
+                measurement,
+                config.channels,
+                plane_index,
+                zstack=True,
+                brightfield_mode=config.stack.brightfield_mode,
+            )
             for channel in rows:
                 if not measurement.has_channel(channel):
                     continue
@@ -1112,8 +1287,10 @@ def export_individual_images(
                     config.channels[channel],
                     resolved_ranges,
                     config.layout,
+                    config.scale_bar,
                     output_dir / filename,
                     include_colorbar=include_colorbars and channel in DATA_CHANNELS,
+                    reference_width_px=reference_width_px if channel == "brightfield" else None,
                 )
                 count += 1
         return count
@@ -1124,6 +1301,12 @@ def export_individual_images(
         base_label = config.measurement_labels.get(measurement.measurement_id, measurement.label)
         base_name = _sanitize_filename_part(base_label or measurement.label or measurement.prefix)
         plane_suffix = f"_Z{requested_plane + 1}" if measurement.is_zstack() else ""
+        reference_width_px = _reference_brillouin_width_for_measurement(
+            measurement,
+            config.channels,
+            requested_plane,
+            zstack=False,
+        )
         for channel in rows:
             if not measurement.has_channel(channel):
                 continue
@@ -1142,8 +1325,10 @@ def export_individual_images(
                 config.channels[channel],
                 resolved_ranges,
                 config.layout,
+                config.scale_bar,
                 output_dir / filename,
                 include_colorbar=include_colorbars and channel in DATA_CHANNELS,
+                reference_width_px=reference_width_px if channel == "brightfield" else None,
             )
             count += 1
     return count

@@ -1,0 +1,6 @@
+Brillouin Publication Panel Builder v1.6.1
+
+Changes in v1.6.1:
+- Fixed standalone individual-image exports so the bottom colorbar tick labels are less likely to be clipped.
+- Added a dedicated bottom figure margin in _render_individual_tile() inside panel_engine.py.
+- The bottom safety margin is now easy to edit in code through the variable bottom_text_margin_mm.

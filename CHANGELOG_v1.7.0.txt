@@ -1,0 +1,17 @@
+Brillouin Publication Panel Builder v1.7.0
+
+New functionality
+- Added calibrated scale bars to panel images and exported individual images.
+- Scale bars are disabled by default to preserve the appearance of older projects.
+- Separate physical pixel-size calibration can be entered for Brillouin maps and brightfield images.
+- Configurable scale-bar length in µm.
+- Scale bar can be applied to all images, brightfield only, or Brillouin maps only.
+- Four corner positions are available.
+- Configurable bar color, line width, image-edge margin, label visibility, and label font size.
+- Scale-bar settings are saved in JSON settings/config files and restored when loading them.
+- Existing settings files from v1.6.1 remain compatible; missing scale-bar settings default to disabled.
+
+Rendering
+- Scale bars are drawn as non-destructive overlays; source images are never modified.
+- Preview, full-panel export, Z-stack export, and individual rendered-image export use the same calibrated overlay logic.
+- The renderer reports an error if the requested scale bar is physically wider than the usable image width, helping catch incorrect calibration values.
