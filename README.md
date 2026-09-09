@@ -1,6 +1,8 @@
-# Brillouin Publication Panel Builder v1.7.0
+# Brillouin Publication Panel Builder
 
-A local Python desktop application for assembling publication panels from Brillouin microscopy exports.
+A local Python desktop application for assembling publication panels from Brillouin microscopy BMicro exports. This app will not analyze your raw microscopy data. For CellSense Brillouin microscopy raw data analysis you need to use BMicro first. 
+
+https://github.com/BrillouinMicroscopy/BMicro
 
 ## What it does
 
