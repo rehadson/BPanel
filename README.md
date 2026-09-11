@@ -212,14 +212,7 @@ Fixes
 - Scale bars for shift/width/intensity now use the physical pixel calibration embedded in each TIFF's own metadata (the same calibration Fiji/ImageJ reports when you open the file), instead of always relying on the manually entered "Brillouin pixel size" value.
 - The manually entered "Brillouin pixel size" field in **6. Scale bar** is kept only as a fallback, used solely for TIFFs that carry no readable calibration (e.g. an export that was never calibrated). It is labeled "(fallback)" in the UI.
 - Brightfield scale bars are derived from that same (embedded-or-fallback) calibration and the field of view of the matching measurement's Brillouin image, so they stay correct even across measurements that were acquired with different calibrations.
-
-Compatibility
-- Existing settings files remain compatible; the manual pixel-size fields are unchanged in the config format, just reduced to a fallback role.
-
-## v1.7.3
-
-Fixes
 - Fixed the top colorbar tick label being cropped in individually exported images (e.g. **Export individual rendered images...** with **Include standalone colorbars** enabled) when that channel had no colorbar title set. Vertical headroom for the top tick label is now always reserved whenever a colorbar is drawn, not only when a title is present.
 
 Compatibility
-- Rendering fix only; no effect on the main panel export (which was not affected by this bug) or on saved settings files.
+- Existing settings files remain compatible; the manual pixel-size fields are unchanged in the config format, just reduced to a fallback role.
