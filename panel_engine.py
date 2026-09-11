@@ -654,28 +654,124 @@ def _zstack_plane_image(
     return stack[plane_index]
 
 
+def _read_tiff_pixel_size_um(path: Optional[Path]) -> Optional[float]:
+    """Read the physical pixel size (µm/px) embedded in a TIFF's resolution
+    metadata - the same calibration Fiji/ImageJ reports when the file is
+    opened there (XResolution/YResolution plus an ImageJ 'unit' tag, or the
+    standard TIFF ResolutionUnit tag). Returns None if the file is not a
+    TIFF, carries no resolution tags, or the resolution has no absolute
+    physical unit (e.g. an uncalibrated export)."""
+    if path is None:
+        return None
+    path = Path(path)
+    if path.suffix.lower() not in (".tif", ".tiff"):
+        return None
+    try:
+        with tifffile.TiffFile(path) as tif:
+            page = tif.pages[0]
+            xres_tag = page.tags.get("XResolution")
+            if xres_tag is None:
+                return None
+            xres_value = xres_tag.value
+            if isinstance(xres_value, tuple) and len(xres_value) == 2:
+                numerator, denominator = xres_value
+                if not denominator:
+                    return None
+                pixels_per_unit = numerator / denominator
+            else:
+                pixels_per_unit = float(xres_value)
+            if pixels_per_unit <= 0:
+                return None
+            pixel_size_native_unit = 1.0 / pixels_per_unit
+
+            imagej_meta = tif.imagej_metadata or {}
+            unit = imagej_meta.get("unit") if isinstance(imagej_meta, dict) else None
+            if unit:
+                unit = str(unit).strip().lower()
+                if unit in ("um", "micron", "microns", "micrometer", "micrometers", "µm"):
+                    return pixel_size_native_unit
+                if unit in ("nm", "nanometer", "nanometers"):
+                    return pixel_size_native_unit / 1000.0
+                if unit in ("mm", "millimeter", "millimeters"):
+                    return pixel_size_native_unit * 1000.0
+                if unit in ("cm", "centimeter", "centimeters"):
+                    return pixel_size_native_unit * 10000.0
+                if unit in ("pixel", "pixels", "inch", "inches"):
+                    # No absolute physical calibration usable here.
+                    return None
+
+            res_unit_tag = page.tags.get("ResolutionUnit")
+            res_unit = res_unit_tag.value if res_unit_tag is not None else None
+            res_unit = int(res_unit) if res_unit is not None else None
+            if res_unit == 3:  # centimeter
+                return pixel_size_native_unit * 10000.0
+            if res_unit == 2:  # inch
+                return pixel_size_native_unit * 25400.0
+            return None
+    except Exception:
+        return None
+
+
+def _resolve_channel_pixel_size_um(
+    measurement: "Measurement", channel: str, scale_bar: ScaleBarSettings
+) -> Optional[float]:
+    """µm/px to use for a calibrated Brillouin data-channel tile: prefer the
+    calibration embedded in the TIFF itself (the same value Fiji/ImageJ would
+    report), and fall back to the manually entered Brillouin pixel size only
+    if the file carries no readable calibration."""
+    path = measurement.files.get(channel)
+    measured = _read_tiff_pixel_size_um(path)
+    if measured is not None and measured > 0:
+        return measured
+    return scale_bar.brillouin_pixel_size_um
+
+
+def _reference_calibration_for_measurement(
+    measurement: "Measurement",
+    channels_config: Dict[str, ChannelSettings],
+    scale_bar: ScaleBarSettings,
+    plane_index: int,
+    zstack: bool,
+    brightfield_mode: str = "first",
+) -> Optional[Tuple[float, float]]:
+    """Find the first available calibrated Brillouin channel image for a
+    measurement and return (its resolved µm/px, its pixel width), so a
+    brightfield scale bar can be derived from the same physical field of
+    view. Returns None if no Brillouin channel image is available."""
+    for candidate in ("shift", "width", "intensity"):
+        if not measurement.has_channel(candidate):
+            continue
+        if zstack:
+            img = _zstack_plane_image(
+                measurement, candidate, channels_config[candidate], plane_index, brightfield_mode
+            )
+        else:
+            img = _comparison_plane_image(
+                measurement, candidate, channels_config[candidate], plane_index
+            )
+        if img is None:
+            continue
+        pixel_size_um = _resolve_channel_pixel_size_um(measurement, candidate, scale_bar)
+        if pixel_size_um is None or pixel_size_um <= 0:
+            continue
+        return float(pixel_size_um), float(img.shape[1])
+    return None
+
+
 def _add_scale_bar(
     ax,
     image: np.ndarray,
     channel: str,
     settings: ScaleBarSettings,
-    reference_width_px: Optional[float] = None,
+    pixel_size_um: Optional[float],
 ) -> None:
     """Draw a calibrated horizontal scale bar inside an image axes.
 
-    The bar length is calculated from the user-supplied pixel calibration and is
-    drawn in axes coordinates so preview and vector/raster exports have identical
+    The bar length is calculated from ``pixel_size_um`` (already resolved by
+    the caller - see ``_resolve_channel_pixel_size_um`` and
+    ``_reference_calibration_for_measurement``) and is drawn in axes
+    coordinates so preview and vector/raster exports have identical
     placement. The image itself is never modified.
-
-    Brightfield images carry no calibration of their own. Brightfield snapshots
-    are acquired over the same physical field of view as their paired, calibrated
-    Brillouin map for that measurement, but usually at a different pixel
-    resolution. When ``reference_width_px`` (the width, in pixels, of that
-    measurement's calibrated Brillouin image) is available, the brightfield pixel
-    size is derived from it so the brightfield scale bar always matches the
-    Brillouin calibration. ``settings.brightfield_pixel_size_um`` is only used as
-    a manual fallback when no Brillouin channel image is available at all (e.g. a
-    brightfield-only measurement).
     """
     if not settings.enabled:
         return
@@ -683,19 +779,11 @@ def _add_scale_bar(
         return
     if settings.apply_to == "brillouin" and channel == "brightfield":
         return
+    if pixel_size_um is None or pixel_size_um <= 0 or settings.length_um <= 0:
+        return
 
     image_width_px = float(image.shape[1])
 
-    if channel == "brightfield":
-        if reference_width_px is not None and reference_width_px > 0 and image_width_px > 0:
-            field_width_um = float(reference_width_px) * float(settings.brillouin_pixel_size_um)
-            pixel_size_um = field_width_um / image_width_px
-        else:
-            pixel_size_um = settings.brightfield_pixel_size_um
-    else:
-        pixel_size_um = settings.brillouin_pixel_size_um
-    if pixel_size_um <= 0 or settings.length_um <= 0:
-        return
 
     bar_width_fraction = (float(settings.length_um) / float(pixel_size_um)) / image_width_px
     margin = max(0.0, min(0.25, float(settings.margin_percent) / 100.0))
@@ -745,49 +833,12 @@ def _add_scale_bar(
         )
 
 
-def _reference_brillouin_width_from_provider(image_provider, col_index: int) -> Optional[float]:
-    """Return the pixel width of the first available calibrated Brillouin channel
-    (shift, then width, then intensity) for a given column, regardless of whether
-    that channel's row is currently shown in the panel. Used to derive an
-    accurate brightfield scale bar from the Brillouin calibration."""
-    for candidate in ("shift", "width", "intensity"):
-        img = image_provider(candidate, col_index)
-        if img is not None:
-            return float(img.shape[1])
-    return None
-
-
-def _reference_brillouin_width_for_measurement(
-    measurement: "Measurement",
-    channels_config: Dict[str, ChannelSettings],
-    plane_index: int,
-    zstack: bool,
-    brightfield_mode: str = "first",
-) -> Optional[float]:
-    """Same as _reference_brillouin_width_from_provider, but for callers (such as
-    individual-image export) that operate directly on a Measurement rather than
-    through an image_provider closure."""
-    for candidate in ("shift", "width", "intensity"):
-        if not measurement.has_channel(candidate):
-            continue
-        if zstack:
-            img = _zstack_plane_image(
-                measurement, candidate, channels_config[candidate], plane_index, brightfield_mode
-            )
-        else:
-            img = _comparison_plane_image(
-                measurement, candidate, channels_config[candidate], plane_index
-            )
-        if img is not None:
-            return float(img.shape[1])
-    return None
-
-
 def _render_grid(
     columns: Sequence[Tuple[str, float]],
     rows: Sequence[str],
     config: PanelConfig,
     image_provider,
+    pixel_size_provider,
     resolved_ranges: Dict[str, Tuple[float, float]],
     output_path: Optional[str | Path],
     preview: bool,
@@ -907,10 +958,8 @@ def _render_grid(
                 )
             ax.set_xlim(-0.5, image.shape[1] - 0.5)
             ax.set_ylim(image.shape[0] - 0.5, -0.5)
-            reference_width_px = None
-            if channel == "brightfield":
-                reference_width_px = _reference_brillouin_width_from_provider(image_provider, col_index)
-            _add_scale_bar(ax, image, channel, config.scale_bar, reference_width_px=reference_width_px)
+            pixel_size_um = pixel_size_provider(channel, col_index, float(image.shape[1]))
+            _add_scale_bar(ax, image, channel, config.scale_bar, pixel_size_um=pixel_size_um)
 
         if channel in DATA_CHANNELS:
             _add_colorbar(
@@ -983,11 +1032,28 @@ def _render_comparison_panel(
             requested_plane,
         )
 
+    def pixel_size_provider(channel: str, col_index: int, image_width_px: float) -> Optional[float]:
+        measurement = selected[col_index]
+        if channel == "brightfield":
+            reference = _reference_calibration_for_measurement(
+                measurement, config.channels, config.scale_bar, requested_plane, zstack=False
+            )
+            if reference is None:
+                return config.scale_bar.brightfield_pixel_size_um
+            ref_pixel_size_um, ref_width_px = reference
+            if image_width_px <= 0:
+                return None
+            return (ref_width_px * ref_pixel_size_um) / image_width_px
+        if not measurement.has_channel(channel):
+            return None
+        return _resolve_channel_pixel_size_um(measurement, channel, config.scale_bar)
+
     return _render_grid(
         columns,
         rows,
         config,
         image_provider,
+        pixel_size_provider,
         resolved_ranges,
         output_path,
         preview,
@@ -1057,11 +1123,32 @@ def _render_zstack_panel(
             config.stack.brightfield_mode,
         )
 
+    def pixel_size_provider(channel: str, col_index: int, image_width_px: float) -> Optional[float]:
+        if channel == "brightfield":
+            reference = _reference_calibration_for_measurement(
+                measurement,
+                config.channels,
+                config.scale_bar,
+                col_index,
+                zstack=True,
+                brightfield_mode=config.stack.brightfield_mode,
+            )
+            if reference is None:
+                return config.scale_bar.brightfield_pixel_size_um
+            ref_pixel_size_um, ref_width_px = reference
+            if image_width_px <= 0:
+                return None
+            return (ref_width_px * ref_pixel_size_um) / image_width_px
+        if not measurement.has_channel(channel):
+            return None
+        return _resolve_channel_pixel_size_um(measurement, channel, config.scale_bar)
+
     return _render_grid(
         columns,
         rows,
         config,
         image_provider,
+        pixel_size_provider,
         resolved_ranges,
         output_path,
         preview,
@@ -1145,7 +1232,7 @@ def _render_individual_tile(
     scale_bar: ScaleBarSettings,
     output_path: str | Path,
     include_colorbar: bool = False,
-    reference_width_px: Optional[float] = None,
+    pixel_size_um: Optional[float] = None,
 ) -> None:
     mm_to_in = 1.0 / 25.4
     height_mm = float(layout.row_height_mm)
@@ -1153,6 +1240,10 @@ def _render_individual_tile(
     image_width_mm = height_mm * aspect
     colorbar_block = 0.0
     right_text_margin_mm = 0.0
+    # Reserve space for the top-most colorbar tick label, which is centered on
+    # the top tick position and therefore extends upward past the image's top
+    # edge. This is needed whenever a colorbar is drawn, not only when a
+    # colorbar title is set.
     top_text_margin_mm = 0.0
     # Reserve extra figure space for tick labels that can extend below the image/colorbar area.
     # Increase this value if the lowest colorbar tick is still clipped in your exports.
@@ -1162,9 +1253,10 @@ def _render_individual_tile(
         # Numeric tick labels are drawn to the right of the colorbar.
         # Reserve real figure space for them so they are not clipped.
         right_text_margin_mm = max(10.0, float(layout.right_margin_mm))
-        # If a colorbar title is used, reserve a little space above it too.
+        top_text_margin_mm = 4.0
+        # If a colorbar title is used, reserve a little extra space above it too.
         if settings.colorbar_label:
-            top_text_margin_mm = 4.0
+            top_text_margin_mm += 4.0
     fig_w_mm = image_width_mm + colorbar_block + right_text_margin_mm
     fig_h_mm = height_mm + top_text_margin_mm + bottom_text_margin_mm
 
@@ -1198,7 +1290,7 @@ def _render_individual_tile(
         )
     ax.set_xlim(-0.5, image.shape[1] - 0.5)
     ax.set_ylim(image.shape[0] - 0.5, -0.5)
-    _add_scale_bar(ax, image, channel, scale_bar, reference_width_px=reference_width_px)
+    _add_scale_bar(ax, image, channel, scale_bar, pixel_size_um=pixel_size_um)
 
     if colorbar_block > 0.0 and channel in DATA_CHANNELS:
         cax = figure.add_axes(
@@ -1261,9 +1353,10 @@ def export_individual_images(
         base_name = _sanitize_filename_part(base_label or measurement.label or measurement.prefix)
         plane_count = int(context["plane_count"])
         for plane_index in range(plane_count):
-            reference_width_px = _reference_brillouin_width_for_measurement(
+            reference = _reference_calibration_for_measurement(
                 measurement,
                 config.channels,
+                config.scale_bar,
                 plane_index,
                 zstack=True,
                 brightfield_mode=config.stack.brightfield_mode,
@@ -1280,6 +1373,16 @@ def export_individual_images(
                 )
                 if image is None:
                     continue
+                if channel == "brightfield":
+                    if reference is None:
+                        pixel_size_um = config.scale_bar.brightfield_pixel_size_um
+                    elif image.shape[1] > 0:
+                        ref_pixel_size_um, ref_width_px = reference
+                        pixel_size_um = (ref_width_px * ref_pixel_size_um) / float(image.shape[1])
+                    else:
+                        pixel_size_um = None
+                else:
+                    pixel_size_um = _resolve_channel_pixel_size_um(measurement, channel, config.scale_bar)
                 filename = f"{base_name}_Z{plane_index + 1}_{channel}{ext}"
                 _render_individual_tile(
                     image,
@@ -1290,7 +1393,7 @@ def export_individual_images(
                     config.scale_bar,
                     output_dir / filename,
                     include_colorbar=include_colorbars and channel in DATA_CHANNELS,
-                    reference_width_px=reference_width_px if channel == "brightfield" else None,
+                    pixel_size_um=pixel_size_um,
                 )
                 count += 1
         return count
@@ -1301,9 +1404,10 @@ def export_individual_images(
         base_label = config.measurement_labels.get(measurement.measurement_id, measurement.label)
         base_name = _sanitize_filename_part(base_label or measurement.label or measurement.prefix)
         plane_suffix = f"_Z{requested_plane + 1}" if measurement.is_zstack() else ""
-        reference_width_px = _reference_brillouin_width_for_measurement(
+        reference = _reference_calibration_for_measurement(
             measurement,
             config.channels,
+            config.scale_bar,
             requested_plane,
             zstack=False,
         )
@@ -1318,6 +1422,16 @@ def export_individual_images(
             )
             if image is None:
                 continue
+            if channel == "brightfield":
+                if reference is None:
+                    pixel_size_um = config.scale_bar.brightfield_pixel_size_um
+                elif image.shape[1] > 0:
+                    ref_pixel_size_um, ref_width_px = reference
+                    pixel_size_um = (ref_width_px * ref_pixel_size_um) / float(image.shape[1])
+                else:
+                    pixel_size_um = None
+            else:
+                pixel_size_um = _resolve_channel_pixel_size_um(measurement, channel, config.scale_bar)
             filename = f"{base_name}{plane_suffix}_{channel}{ext}"
             _render_individual_tile(
                 image,
@@ -1328,7 +1442,7 @@ def export_individual_images(
                 config.scale_bar,
                 output_dir / filename,
                 include_colorbar=include_colorbars and channel in DATA_CHANNELS,
-                reference_width_px=reference_width_px if channel == "brightfield" else None,
+                pixel_size_um=pixel_size_um,
             )
             count += 1
     return count

@@ -67,13 +67,14 @@ python app.py
 1. Start `app.py`.
 2. Click **Browse...** and choose the folder containing your exported microscopy files.
 3. The measurement table shows which channels were found for each measurement.
-4. Uncheck measurements you do not want in the panel.
+4. Uncheck measurements you do not want in the panel (or use **Use all** / **Use none** to toggle everything at once).
 5. Edit column labels if desired, and use **Move up / Move down** to reorder them.
 6. Drag the channel names to set row order.
 7. In each channel tab, choose whether the row should be included and set its display settings.
 8. Click **Update preview**.
 9. Click **Export panel...** and choose PDF, SVG, PNG, or TIFF.
 
+Each numbered section (Data folder, Measurements/columns, Panel mode/Z-stacks, Channels/rows, Layout, Scale bar) can be collapsed by clicking its header, which helps when scrolling through a long control panel.
 
 ## Z-stack support
 
@@ -109,7 +110,7 @@ This is editable in the GUI. Verify the factor against the unit convention used 
 - **Data min / max**: uses the global min and max across all selected measurements that contain that channel.
 - **Percentile**: uses the global percentile limits across selected measurements. This can be useful for intensity maps with extreme outliers.
 
-A single colorbar is drawn for each quantitative row, so all images in that row always use one shared scale.
+A single colorbar is drawn for each quantitative row, so all images in that row always use one shared scale. Each row's colorbar can show numeric tick values, or just Min/Max labels (see **Colorbar tick labels** below) — useful for channels like intensity where the absolute numbers are arbitrary.
 
 ## Custom colormaps
 
@@ -179,18 +180,20 @@ In **6. Scale bar**, configure:
 - whether the scale bar is enabled;
 - whether it is applied to all images, brightfield only, or Brillouin maps only;
 - scale-bar length in µm;
-- Brillouin pixel size in µm/pixel;
-- brightfield pixel size in µm/pixel;
+- Brillouin pixel size in µm/pixel (fallback only, see v1.7.2 below);
+- brightfield pixel size in µm/pixel (fallback only, see v1.7.1 below);
 - corner position, color, line width, and edge margin;
 - whether the numerical length label is shown and its font size.
 
-The Brillouin and brightfield calibrations are deliberately separate because their image grids can have different physical sampling. Enter the actual acquisition/export calibration; the program does not infer or guess pixel size from image dimensions. The scale bar is an overlay only and never modifies the source image data.
+The scale bar is an overlay only and never modifies the source image data.
 
 ## v1.7.1
 
 Fixes
-- Brightfield scale bar is now calibrated automatically from the paired Brillouin measurement's pixel size and field of view, instead of a separate manually-entered value.
-- Manual "Brightfield pixel size" field is kept only as a fallback for measurements with no Brillouin channel image, and is labeled as such in the UI.
+- Brightfield images carry no calibration of their own. The brightfield scale bar is now calibrated automatically from the paired Brillouin measurement's pixel size and field of view (same physical area, different camera resolution), instead of relying on a separate manually-entered value that had no real connection to the true calibration.
+- The manual "Brightfield pixel size" field in **6. Scale bar** is kept only as a fallback, used solely for measurements that have no Brillouin channel image at all (e.g. brightfield-only measurements). It is labeled as such in the UI.
+- `run_windows.bat` no longer flashes and closes silently on failure: it now keeps the window open and prints the actual Python error when the app fails to start.
+- `run_windows.bat` now falls back to the Windows `py` launcher if `python` is not found on PATH, and gives a clear message with a download link if no Python interpreter can be found at all.
 
 New functionality
 - Added a per-channel colorbar tick-label style: numeric values, or Min/Max labels only.
@@ -199,8 +202,24 @@ New functionality
 - All control sections (Data folder, Measurements/columns, Panel mode/Z-stacks, Channels/rows, Layout, Scale bar) can now be collapsed/expanded by clicking their header, making it faster to reach controls near the bottom of the panel.
 - Added "Use all" / "Use none" buttons to the Measurements/columns section, to quickly select or deselect all scanned measurements instead of unchecking them one by one.
 
-
 Compatibility
 - Existing settings files from v1.7.0 remain compatible; missing colorbar tick-style settings default to numeric.
+- The `run_windows.bat` change is packaging/launcher only; no effect on rendering, exports, or saved settings files.
 
+## v1.7.2
 
+Fixes
+- Scale bars for shift/width/intensity now use the physical pixel calibration embedded in each TIFF's own metadata (the same calibration Fiji/ImageJ reports when you open the file), instead of always relying on the manually entered "Brillouin pixel size" value.
+- The manually entered "Brillouin pixel size" field in **6. Scale bar** is kept only as a fallback, used solely for TIFFs that carry no readable calibration (e.g. an export that was never calibrated). It is labeled "(fallback)" in the UI.
+- Brightfield scale bars are derived from that same (embedded-or-fallback) calibration and the field of view of the matching measurement's Brillouin image, so they stay correct even across measurements that were acquired with different calibrations.
+
+Compatibility
+- Existing settings files remain compatible; the manual pixel-size fields are unchanged in the config format, just reduced to a fallback role.
+
+## v1.7.3
+
+Fixes
+- Fixed the top colorbar tick label being cropped in individually exported images (e.g. **Export individual rendered images...** with **Include standalone colorbars** enabled) when that channel had no colorbar title set. Vertical headroom for the top tick label is now always reserved whenever a colorbar is drawn, not only when a title is present.
+
+Compatibility
+- Rendering fix only; no effect on the main panel export (which was not affected by this bug) or on saved settings files.

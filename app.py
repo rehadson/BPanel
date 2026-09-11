@@ -63,7 +63,7 @@ from panel_engine import (
 )
 
 
-APP_VERSION = "1.7.2"
+APP_VERSION = "1.7.3"
 APP_TITLE = f"Brillouin Publication Panel Builder v{APP_VERSION}"
 
 
@@ -522,19 +522,21 @@ class MainWindow(QMainWindow):
         self.scale_font_size = self._double_spin(1, 40, 8.0, 0.5, 1)
 
         scale_note = QLabel(
-            "Brillouin pixel size must be the physical X/Y calibration in µm/pixel. "
-            "Brightfield images carry no calibration of their own, so the brightfield scale bar "
-            "is automatically derived from the Brillouin pixel size and field of view of the "
-            "matching measurement (they share the same field of view at a different pixel "
-            "resolution). The brightfield pixel size below is only used as a manual fallback "
-            "for measurements that have no Brillouin channel image at all."
+            "For shift/width/intensity, BPanel first reads the pixel calibration embedded in "
+            "each TIFF (the same calibration Fiji/ImageJ shows). The Brillouin pixel size below "
+            "is only used as a manual fallback for TIFFs that carry no readable calibration. "
+            "Brightfield images have no calibration of their own, so the brightfield scale bar "
+            "is automatically derived from the (embedded or fallback) calibration and field of "
+            "view of the matching measurement's Brillouin image. The brightfield pixel size "
+            "below is only used as a manual fallback for measurements with no Brillouin channel "
+            "image at all."
         )
         scale_note.setWordWrap(True)
 
         scale_form.addRow(self.scale_enabled)
         scale_form.addRow("Apply to", self.scale_apply_to)
         scale_form.addRow("Bar length [µm]", self.scale_length)
-        scale_form.addRow("Brillouin pixel size [µm/px]", self.scale_brillouin_px)
+        scale_form.addRow("Brillouin pixel size (fallback) [µm/px]", self.scale_brillouin_px)
         scale_form.addRow("Brightfield pixel size (fallback) [µm/px]", self.scale_brightfield_px)
         scale_form.addRow("Position", self.scale_position)
         scale_form.addRow("Color", self.scale_color)
